@@ -1,0 +1,9 @@
+# Folders
+.venv/
+.ipynb_checkpoints/
+__pycache__/
+config/
+
+# Filels
+
+schema.avsc
