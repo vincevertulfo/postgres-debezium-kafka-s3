@@ -1,0 +1,16 @@
+{
+    "name": "minio-sink-connector",
+    "config": {
+        "connector.class": "io.aiven.kafka.connect.s3.AivenKafkaConnectS3SinkConnector",
+        "aws.access.key.id": "minio",
+        "aws.secret.access.key": "minio123",
+        "aws.s3.bucket.name": "raw",
+        "aws.s3.endpoint": "http://minio:9000",
+        "aws.s3.region": "us-east-1",
+        "format.output.type": "jsonl",
+        "topics": "streaming.public.employees, streaming.public.products",
+        "file.compression.type": "none",
+        "flush.size": "20",
+        "file.name.template": "/{{topic}}/{{timestamp:unit=yyyy}}-{{timestamp:unit=MM}}-{{timestamp:unit=dd}}/{{timestamp:unit=HH}}/{{partition:padding=true}}-{{start_offset:padding=true}}.json"
+    }
+}

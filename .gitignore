@@ -3,7 +3,8 @@
 .ipynb_checkpoints/
 __pycache__/
 config/
+minio/
 
-# Filels
-
+# Files
 schema.avsc
+connectors/*

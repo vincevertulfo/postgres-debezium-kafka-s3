@@ -1,0 +1,186 @@
+version: "3.7"
+services:
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:v2.47.2
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus
+
+  grafana:
+    container_name: grafana
+    image: grafana/grafana:5.2.1
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+
+  postgres:
+    container_name: postgres
+    image: debezium/postgres:13
+    ports:
+      - 5433:5432
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=root
+      - POSTGRES_DB=streaming
+ 
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+        - PGADMIN_DEFAULT_EMAIL=admin@admin.com
+        - PGADMIN_DEFAULT_PASSWORD=root
+    ports:
+        - '5050:80'
+    restart: always
+ 
+  zookeeper:
+    image: confluentinc/cp-zookeeper:5.5.3
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      EXTRA_ARGS: -javaagent:/usr/share/jmx_exporter/jmx_prometheus_javaagent-1.0.1.jar=9200:/usr/share/jmx_exporter/zookeeper.yml
+    volumes:
+      - ./jmx-exporter:/usr/share/jmx_exporter/
+ 
+  kafka:
+    image: confluentinc/cp-enterprise-kafka:5.5.3
+    container_name: kafka-broker
+    depends_on: [zookeeper]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_JMX_PORT: 9991
+      KAFKA_OPTS: -javaagent:/usr/share/jmx_exporter/jmx_prometheus_javaagent-1.0.1.jar=9200:/usr/share/jmx_exporter/kafka-broker.yml
+    ports:
+      - 29092:29092
+    volumes:
+      - ./jmx-exporter:/usr/share/jmx_exporter/
+  
+  schema-registry:
+    image: confluentinc/cp-schema-registry:5.5.3
+    container_name: schema-registry
+    environment:
+      SCHEMA_REGISTRY_KAFKASTORE_CONNECTION_URL: zookeeper:2181
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://schema-registry:8085,http://localhost:8085
+      SCHEMA_REGISTRY_JMX_OPTS: -javaagent:/usr/share/jmx_exporter/jmx_prometheus_javaagent-1.0.1.jar=9200:/usr/share/jmx_exporter/confluent_schemaregistry.yml
+    ports:
+      - 8085:8085
+    depends_on: [zookeeper, kafka]
+    volumes:
+      - ./jmx-exporter:/usr/share/jmx_exporter/
+ 
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect-base:6.2.0
+    container_name: kafka-connect
+    depends_on:
+      - kafka
+      - schema-registry
+    ports:
+      - 8083:8083
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: "kafka:9092"
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: kafka-connect
+      CONNECT_CONFIG_STORAGE_TOPIC: _connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: _connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: _connect-status
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8085'
+      CONNECT_REST_ADVERTISED_HOST_NAME: "kafka-connect"
+      CONNECT_LOG4J_APPENDER_STDOUT_LAYOUT_CONVERSIONPATTERN: "[%d] %p %X{connector.context}%m (%c:%L)%n"
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components,/connectors/
+      KAFKA_JMX_OPTS: -javaagent:/usr/share/jmx_exporter/jmx_prometheus_javaagent-1.0.1.jar=9200:/usr/share/jmx_exporter/kafka-connect.yml
+    volumes:
+      - ./connectors:/connectors
+      - ./jmx-exporter:/usr/share/jmx_exporter/
+    # In the command section, $ are replaced with $$ to avoid the error 'Invalid interpolation format for "command" option'
+    # command:
+    #   - bash
+    #   - -c
+    #   - |
+    #     echo "Installing Connector"
+    #     confluent-hub install --no-prompt confluentinc/kafka-connect-s3:latest
+    #     confluent-hub install --no-prompt debezium/debezium-connector-postgresql:latest
+ 
+    #     #
+    #     echo "Launching Kafka Connect worker"
+    #     /etc/confluent/docker/run &
+    #     #
+    #     sleep infinity
+ 
+  ksqldb:
+    image: confluentinc/ksqldb-server:0.21.0
+    container_name: ksqldb
+    depends_on:
+      - kafka
+      - kafka-connect
+    ports:
+      - "8088:8088"
+    environment:
+      KSQL_LISTENERS: http://0.0.0.0:8088
+      KSQL_BOOTSTRAP_SERVERS: kafka:9092
+      KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: "true"
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE: "true"
+      KSQL_KSQL_SCHEMA_REGISTRY_URL: http://schema-registry:8085
+      KSQL_STREAMS_PRODUCER_MAX_BLOCK_MS: 9223372036854775807
+      KSQL_KSQL_CONNECT_URL: http://kafka-connect:8083
+      KSQL_KSQL_SERVICE_ID: confluent_vince_test
+      KSQL_KSQL_HIDDEN_TOPICS: '^_.*'
+ 
+  minio:
+    image: quay.io/minio/minio:RELEASE.2022-05-26T05-48-41Z
+    hostname: minio
+    container_name: minio
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - ./minio/data:/data
+    environment:
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: minio123
+    command: server --console-address ":9001" /data
+ 
+  control-center:
+    image: confluentinc/cp-enterprise-control-center:6.2.0
+    container_name: control-center
+    depends_on:
+      - kafka
+      - schema-registry
+    ports:
+      - "9021:9021"
+    environment:
+      CONTROL_CENTER_BOOTSTRAP_SERVERS: 'kafka:9092'
+      CONTROL_CENTER_CONNECT_CONNECT_CLUSTER: 'kafka-connect:8083'
+      CONTROL_CENTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8085"
+      CONTROL_CENTER_KSQL_KSQLDB_URL: "http://ksqldb:8088"
+      CONTROL_CENTER_KSQL_KSQLDB_ADVERTISED_URL: "http://localhost:8088"
+      CONFLUENT_METRICS_TOPIC_REPLICATION: 1
+      CONTROL_CENTER_REPLICATION_FACTOR: 1
+      CONTROL_CENTER_COMMAND_TOPIC_REPLICATION: 1
+      CONTROL_CENTER_MONITORING_INTERCEPTOR_TOPIC_REPLICATION: 1
+      CONTROL_CENTER_INTERNAL_TOPICS_PARTITIONS: 1
+      CONTROL_CENTER_INTERNAL_TOPICS_REPLICATION: 1
+      CONTROL_CENTER_MONITORING_INTERCEPTOR_TOPIC_PARTITIONS: 1
+      CONTROL_CENTER_STREAMS_NUM_STREAM_THREADS: 1
+      CONTROL_CENTER_STREAMS_CACHE_MAX_BYTES_BUFFERING: 104857600
+    command:
+      - bash
+      - -c
+      - |
+        echo "Waiting two minutes for Kafka brokers to start and
+               necessary topics to be available"
+        sleep 120  
+        /etc/confluent/docker/run

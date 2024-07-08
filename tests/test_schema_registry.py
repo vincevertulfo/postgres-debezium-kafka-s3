@@ -1,13 +1,22 @@
-from confluent_kafka.schema_registry import Schema, SchemaRegistryClient
+from confluent_kafka.schema_registry import SchemaRegistryClient
 
-schema_registry_url = "http://localhost:8085" 
-schema_registry_client = SchemaRegistryClient({"url":schema_registry_url })
+# Schema Registry URL
+schema_registry_url = "http://localhost:8085"
 
-schema_version = schema_registry_client.get_latest_version(
-    'postgres.public.ingredients-value'
-)
-schema_id = schema_version.schema_id
+# Initialize Schema Registry client
+schema_registry_client = SchemaRegistryClient({"url": schema_registry_url})
 
-schema = schema_registry_client.get_schema(schema_id)
+# Get all registered subjects
+subjects = schema_registry_client.get_subjects()
 
-schema_str = schema.schema_str
+print("Registered Subjects:")
+for subject in subjects:
+    print(subject)
+
+# Get the latest schema version and retrieve schema string for each subject
+for subject in subjects:
+    latest_version = schema_registry_client.get_latest_version(subject).schema_id
+    schema_str = schema_registry_client.get_schema(latest_version).schema_str
+    
+    print(f"\nSchema String for '{subject}':")
+    print(schema_str)
