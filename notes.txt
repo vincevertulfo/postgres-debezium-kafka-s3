@@ -1,0 +1,66 @@
+====================================
+=       Install Docker             =
+====================================
+1. Check if WSL is installed. Open a command prompt, type 'wsl'. Otherwise, 'wsl --install'.
+2. Enable WSL 2.
+3. Enable Windows Subsystem for Linux via Windows Features. It may take some time. Do not restart yet.
+4. Check if virtualization is enabled. Press Windows + Ctrl + Shift + Esc. Go to CPU and verify virtualization status.
+5. Install Docker. After installation, restart PC.
+6. Click on "Use recommended settings" during Docker setup and finish.
+7. Continue with signing in to start the Docker engine.
+8. Open command line, run:
+
+    docker --version
+    docker-compose --version
+
+====================================
+=           Debezium               =
+====================================
+Using Postman/Thunder Client
+- List Connectors: GET http://localhost:8083/connectors
+- Add Connector: POST http://localhost:8083/connectors using a JSON config file or:
+
+    curl -i -X POST -H "Accept:application/json" -H "Content-Type:application/json" 127.0.0.1:8083/connectors/ --data "@debezium.json"
+
+
+====================================
+=           PostgreSQL             =
+====================================
+1. Change wal_level from replica to logical:
+
+    ALTER SYSTEM SET wal_level TO 'logical';
+
+Restart the Docker PostgreSQL image.
+
+2. Use ALTER TABLE ... REPLICA IDENTITY FULL to set the table's replication identity to "full".
+
+====================================
+=           Kafkacat               =
+====================================
+One way to display the topic message:
+
+    docker run --tty --network postgres-debezium-kafka-s3_default confluentinc/cp-kafkacat kafkacat -b kafka:9092 -C -s key=s -s value=avro -r http://schema-registry:8085 -t <topic name>
+
+====================================
+=           KSQLDB                 =
+====================================
+Access KSQL:
+
+    docker exec -it ksqldb ksql http://localhost:8088
+
+====================================
+=           Prometheus             =
+====================================
+JMX-exporter needed for monitoring metrics:
+- Download from Prometheus GitHub Releases.
+- Sample configs available at Confluent GitHub > https://github.com/prometheus/jmx_exporter/tree/main/example_configs
+
+
+====================================
+=           Grafana                =
+====================================
+Templates available at :
+- https://grafana.com/grafana/dashboards/
+- https://github.com/confluentinc/jmx-monitoring-stacks/tree/main/jmxexporter-prometheus-grafana/assets/grafana/provisioning/dashboards
+
+Change the datasource in Prometheus.yml.
